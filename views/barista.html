@@ -1,0 +1,57 @@
+<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dashboard barista</title><link rel="stylesheet" href="/style.css"></head><body>
+<header class="top">
+  <div><h1>Kopi Kita</h1><p>Dashboard barista</p></div>
+  <div class="actions"><span class="live" id="live">● Terhubung</span><a class="btn ghost" href="/admin/qr" target="_blank">Cetak QR meja</a></div>
+</header>
+<details class="menus-box"><summary>Ketersediaan menu — hilangkan centang kalau habis</summary><div id="menus" class="menus"></div></details>
+<div class="cols">
+  <section class="col"><h2><i class="dot"></i>Baru <b class="pill" id="c-baru">0</b></h2><div id="baru"></div></section>
+  <section class="col"><h2><i class="dot diproses"></i>Diproses <b class="pill" id="c-diproses">0</b></h2><div id="diproses"></div></section>
+  <section class="col"><h2><i class="dot siap"></i>Siap diambil <b class="pill" id="c-siap">0</b></h2><div id="siap"></div></section>
+</div>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const NEXT = { baru: ['diproses', 'Mulai buat'], diproses: ['siap', 'Siap diambil'], siap: ['selesai', 'Sudah diambil'] };
+const el = (t, txt, cls) => { const e = document.createElement(t); if (txt != null) e.textContent = txt; if (cls) e.className = cls; return e; };
+const api = (u, m, b) => fetch(u, { method: m || 'GET', headers: { 'Content-Type': 'application/json' }, body: b && JSON.stringify(b) });
+const rp = n => 'Rp' + n.toLocaleString('id-ID');
+const mins = s => Math.max(0, Math.round((Date.now() - new Date(s.replace(' ', 'T'))) / 60000));
+
+function card(o) {
+  const m = mins(o.created_at), c = el('div', null, 'card' + (m >= 10 && o.status !== 'siap' ? ' late' : ''));
+  const head = el('div', null, 'head'); head.append(el('h3', '#' + o.id), el('span', 'Meja ' + o.nomor, 'meja')); c.append(head);
+  c.append(el('div', m < 1 ? 'Baru saja' : m + ' menit lalu', 'ago'));
+  const ul = el('ul');
+  o.items.forEach(i => { const li = el('li'); li.append(el('b', i.qty + '×'), document.createTextNode(i.nama)); ul.append(li); }); c.append(ul);
+  if (o.catatan) c.append(el('div', 'Catatan: ' + o.catatan, 'cat'));
+  const paid = o.pay_status === 'paid';
+  c.append(el('span', paid ? 'Lunas' : 'Belum bayar · ' + rp(o.total), 'pay' + (paid ? ' ok' : '')));
+  const acts = el('div', null, 'acts'), [next, label] = NEXT[o.status], b = el('button', label);
+  b.onclick = () => { b.disabled = true; api('/api/admin/orders/' + o.id, 'PATCH', { status: next }); }; acts.append(b);
+  if (!paid) { const p = el('button', 'Tandai lunas', 'ghost'); p.onclick = () => api('/api/admin/orders/' + o.id, 'PATCH', { paid: true }); acts.append(p); }
+  c.append(acts); return c;
+}
+async function load() {
+  const list = await (await api('/api/admin/orders')).json();
+  for (const k of ['baru', 'diproses', 'siap']) {
+    const cards = list.filter(o => o.status === k);
+    $('#c-' + k).textContent = cards.length;
+    $('#' + k).replaceChildren(...(cards.length ? cards.map(card) : [el('div', 'Belum ada pesanan', 'empty')]));
+  }
+}
+async function loadMenus() {
+  const ms = await (await api('/api/admin/menus')).json();
+  $('#menus').replaceChildren(...ms.map(m => {
+    const l = el('label', null, 'chip'), cb = el('input'); cb.type = 'checkbox'; cb.checked = !!m.aktif;
+    cb.onchange = () => api('/api/admin/menus/' + m.id, 'PATCH', { aktif: cb.checked });
+    l.append(cb, el('span', m.nama + ' · ' + rp(m.harga))); return l; }));
+}
+function beep() { try { const a = new AudioContext(), o = a.createOscillator(); o.connect(a.destination); o.frequency.value = 880; o.start(); o.stop(a.currentTime + .25); } catch (e) {} }
+const s = io();
+s.on('connect', () => { s.emit('join:barista'); $('#live').textContent = '● Terhubung'; $('#live').className = 'live'; });
+s.on('disconnect', () => { $('#live').textContent = '● Terputus'; $('#live').className = 'live off'; });
+s.on('refresh', load); s.on('new', beep);
+load(); loadMenus(); setInterval(load, 30000);
+</script></body></html>

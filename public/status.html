@@ -1,0 +1,57 @@
+<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Status pesanan</title><link rel="stylesheet" href="style.css"></head><body>
+<header><p>Nomor pesanan · Meja <span id="mj"></span></p><div class="big" id="no">#</div></header>
+<main>
+  <div class="state" id="st">Memuat…</div>
+  <div class="steps" id="steps"><i></i><i></i><i></i></div>
+  <div id="qr" class="note" hidden><strong>Scan untuk bayar (QRIS)</strong><br><img id="qrimg" alt="QRIS" width="240" height="240"></div>
+  <div id="cash" class="note" hidden>Bayar di kasir saat mengambil pesanan.</div>
+  <div id="items"></div>
+  <div class="note" id="pushbox" hidden>
+    <p id="pushtxt" style="margin-top:0">Mau dikabari saat pesanan siap, walau HP terkunci?</p>
+    <button id="push">Aktifkan notifikasi</button>
+  </div>
+  <p class="note">Biarkan halaman ini terbuka atau cek lagi nanti. Status selalu diperbarui di sini.</p>
+</main>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const pid = new URLSearchParams(location.search).get('o'), $ = s => document.querySelector(s);
+const LBL = { menunggu: 'Menunggu pembayaran', baru: 'Pesanan diterima', diproses: 'Sedang dibuat', siap: 'Siap diambil!', selesai: 'Selesai', batal: 'Dibatalkan / kedaluwarsa' };
+const IDX = { menunggu: 0, baru: 1, diproses: 2, siap: 3, selesai: 3 };
+let last = '';
+async function load() {
+  const r = await fetch('/api/orders/' + pid); if (!r.ok) { $('#st').textContent = 'Pesanan tidak ditemukan'; return; }
+  const o = await r.json();
+  $('#mj').textContent = o.nomor; $('#no').textContent = '#' + o.id;
+  $('#st').textContent = LBL[o.status]; $('#st').className = 'state ' + o.status;
+  document.querySelectorAll('#steps i').forEach((e, i) => e.classList.toggle('on', i < IDX[o.status]));
+  $('#qr').hidden = !(o.status === 'menunggu' && o.qr_url); if (o.qr_url) $('#qrimg').src = o.qr_url;
+  $('#cash').hidden = !(o.pay_method === 'cashier' && o.pay_status !== 'paid' && ['baru', 'diproses', 'siap'].includes(o.status));
+  $('#items').replaceChildren(...o.items.map(i => { const d = document.createElement('div'); d.className = 'row'; d.textContent = i.qty + '× ' + i.nama; return d; }));
+  if (o.status === 'siap' && last !== 'siap') { navigator.vibrate && navigator.vibrate([300, 150, 300]); document.title = '✅ Pesanan siap!'; }
+  last = o.status;
+}
+load(); setInterval(load, 8000);
+const s = io(); s.emit('join:order', pid); s.on('connect', () => s.emit('join:order', pid)); s.on('status', load);
+
+// ---- Web Push ----
+const ios = /iPhone|iPad/.test(navigator.userAgent), standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+const b64 = k => Uint8Array.from(atob((k + '='.repeat((4 - k.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+(async () => {
+  const cfg = await (await fetch('/api/config')).json();
+  if (!cfg.vapid) return;
+  if (ios && !standalone) { $('#pushbox').hidden = false; $('#push').hidden = true;
+    $('#pushtxt').textContent = 'Di iPhone: ketuk Bagikan → Tambah ke Layar Utama, lalu buka dari sana untuk dapat notifikasi saat HP terkunci.'; return; }
+  if (!('serviceWorker' in navigator && 'PushManager' in window) || Notification.permission === 'denied') return;
+  $('#pushbox').hidden = false;
+  $('#push').onclick = async () => {
+    try {
+      const reg = await navigator.serviceWorker.register('/sw.js');
+      if (await Notification.requestPermission() !== 'granted') return;
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(cfg.vapid) });
+      await fetch(`/api/orders/${pid}/push`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subscription: sub }) });
+      $('#pushtxt').textContent = 'Notifikasi aktif. Kamu akan dikabari saat pesanan siap.'; $('#push').hidden = true;
+    } catch (e) { $('#pushtxt').textContent = 'Notifikasi gagal diaktifkan. Pantau lewat halaman ini.'; }
+  };
+})();
+</script></body></html>
