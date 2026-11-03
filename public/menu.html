@@ -1,0 +1,60 @@
+<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pesan — Kopi Kita</title><link rel="stylesheet" href="style.css"></head><body>
+<header><h1>Kopi Kita</h1><p id="meja">Memuat…</p></header>
+<main>
+  <div id="menu"></div>
+  <section id="co" hidden>
+    <h2>Pesananmu</h2><div id="sum"></div>
+    <label>Catatan<textarea id="cat" rows="2" maxlength="200" placeholder="Misal: less sugar"></textarea></label>
+    <label>Cara bayar<select id="pay"><option value="cashier">Bayar di kasir</option></select></label>
+    <button id="go" style="width:100%">Pesan sekarang</button><p id="err" class="err"></p>
+  </section>
+</main>
+<div id="bar" hidden><span id="tot"></span><button id="next">Lihat pesanan</button></div>
+<script>
+const rp = n => 'Rp' + n.toLocaleString('id-ID'), $ = s => document.querySelector(s);
+const token = new URLSearchParams(location.search).get('meja'), cart = {}; let menu = [];
+function el(t, txt, cls) { const e = document.createElement(t); if (txt != null) e.textContent = txt; if (cls) e.className = cls; return e; }
+
+async function init() {
+  const t = await fetch('/api/table/' + token); 
+  if (!t.ok) { $('#meja').textContent = 'QR tidak valid. Scan ulang QR di mejamu.'; return; }
+  $('#meja').textContent = 'Meja ' + (await t.json()).nomor;
+  const cfg = await (await fetch('/api/config')).json();
+  if (cfg.qris) $('#pay').append(new Option('QRIS (bayar sekarang)', 'qris'));
+  await loadMenu(); setInterval(loadMenu, 20000);
+}
+async function loadMenu() {
+  menu = await (await fetch('/api/menu')).json();
+  menu.forEach(m => { if (!m.aktif) delete cart[m.id]; });
+  draw();
+}
+function draw() {
+  const root = $('#menu'); root.replaceChildren(); let cat = '';
+  for (const m of menu) {
+    if (m.kategori !== cat) { cat = m.kategori; root.append(el('h2', cat)); }
+    const row = el('div', null, 'row' + (m.aktif ? '' : ' soldout')), info = el('div');
+    if (!m.aktif) { info.append(el('strong', m.nama)); row.append(info, el('span', 'Sold out', 'soldbadge')); root.append(row); continue; }
+    info.append(el('strong', m.nama), el('small', rp(m.harga)));
+    const q = el('div', null, 'qty'), minus = el('button', '−', 'ghost'), plus = el('button', '+');
+    minus.setAttribute('aria-label', 'Kurangi ' + m.nama); plus.setAttribute('aria-label', 'Tambah ' + m.nama);
+    minus.onclick = () => { cart[m.id] = Math.max((cart[m.id] || 0) - 1, 0); draw(); };
+    plus.onclick = () => { cart[m.id] = Math.min((cart[m.id] || 0) + 1, 20); draw(); };
+    q.append(minus, el('span', cart[m.id] || 0), plus); row.append(info, q); root.append(row);
+  }
+  const lines = menu.filter(m => m.aktif && cart[m.id] > 0), total = lines.reduce((s, m) => s + m.harga * cart[m.id], 0);
+  $('#bar').hidden = !lines.length; $('#tot').textContent = lines.reduce((s, m) => s + cart[m.id], 0) + ' item · ' + rp(total);
+  const sum = $('#sum'); sum.replaceChildren();
+  for (const m of lines) { const r = el('div', null, 'row'); r.append(el('span', cart[m.id] + '× ' + m.nama), el('span', rp(m.harga * cart[m.id]))); sum.append(r); }
+}
+$('#next').onclick = () => { $('#co').hidden = false; $('#co').scrollIntoView({ behavior: 'smooth' }); };
+$('#go').onclick = async () => {
+  $('#go').disabled = true; $('#err').textContent = '';
+  const items = Object.entries(cart).filter(([, q]) => q > 0).map(([id, qty]) => ({ id: +id, qty }));
+  const r = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, items, catatan: $('#cat').value, method: $('#pay').value }) });
+  const d = await r.json();
+  if (r.ok) location.href = '/status.html?o=' + d.pid; else { $('#err').textContent = d.error || 'Gagal memesan.'; $('#go').disabled = false; }
+};
+init();
+</script></body></html>
