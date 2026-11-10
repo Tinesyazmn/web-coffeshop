@@ -20,6 +20,15 @@ create table if not exists orders(id integer primary key, pid text unique, table
 create table if not exists order_items(id integer primary key, order_id integer, nama text, qty integer, harga integer);
 create table if not exists subs(id integer primary key, order_id integer, endpoint text unique, p256dh text, auth text);
 `);
+for (const q of ['alter table orders add column nama text', 'alter table order_items add column opsi text']) { try { db.exec(q); } catch (e) {} }
+const OPSI = [
+  { key: 'suhu', label: 'Suhu', selalu: true, pilihan: [['Cold', 0], ['Hot', 0]] },
+  { key: 'ukuran', label: 'Ukuran', selalu: true, pilihan: [['Regular', 0], ['Large', 5000]] },
+  { key: 'gula', label: 'Gula', pilihan: [['Normal', 0], ['Less sugar', 0], ['No sugar', 0]] },
+  { key: 'es', label: 'Es', skip: { suhu: 'Hot' }, pilihan: [['Normal', 0], ['Less ice', 0], ['No ice', 0]] },
+  { key: 'topping', label: 'Ekstra topping', multi: true, pilihan: [['Extra Espresso', 6000], ['Gula Aren', 6000], ['Grass Jelly', 6000], ['Marie Regal', 6000]] },
+];
+const opsiFor = k => ['Kopi', 'Non-kopi'].includes(k) ? OPSI : null;
 if (!db.prepare('select 1 from tables').get()) {
   const t = db.prepare('insert into tables(nomor,token) values(?,?)');
   for (let i = 1; i <= 10; i++) t.run(i, crypto.randomBytes(4).toString('hex'));
@@ -35,30 +44,42 @@ const auth = (req, res, next) => isAdmin(req.headers.authorization) ? next() : r
 
 const full = id => {
   const o = db.prepare('select o.*, t.nomor from orders o join tables t on t.id=o.table_id where o.id=?').get(id);
-  if (o) o.items = db.prepare('select nama, qty from order_items where order_id=?').all(id);
+  if (o) o.items = db.prepare('select nama, qty, opsi from order_items where order_id=?').all(id);
   return o;
 };
 const refresh = () => io.to('barista').emit('refresh');
 
 // ---------- Customer ----------
 app.get('/api/config', (_, res) => res.json({ vapid: VAPID ? env.VAPID_PUBLIC : null, qris: !!MID }));
-app.get('/api/menu', (_, res) => res.json(db.prepare('select id,nama,harga,kategori,aktif from menus order by kategori,id').all()));
+app.get('/api/menu', (_, res) => res.json(db.prepare('select id,nama,harga,kategori,aktif from menus order by kategori,id').all().map(m => ({ ...m, opsi: opsiFor(m.kategori) }))));
 app.get('/api/table/:token', (req, res) => {
   const t = db.prepare('select nomor from tables where token=?').get(req.params.token);
   t ? res.json(t) : res.sendStatus(404);
 });
 
 app.post('/api/orders', async (req, res) => {
-  const { token, items, catatan = '', method = 'cashier' } = req.body || {};
+  const { token, nama = '', items, catatan = '', method = 'cashier' } = req.body || {};
   const t = db.prepare('select * from tables where token=?').get(token);
   if (!t) return res.status(400).json({ error: 'Meja tidak dikenal. Scan ulang QR di meja.' });
+  const who = String(nama).trim().slice(0, 30);
+  if (!who) return res.status(400).json({ error: 'Isi nama pemesan dulu.' });
   let total = 0; const rows = [];
   for (const i of Array.isArray(items) ? items : []) {   // harga selalu dihitung di server
     const m = db.prepare('select * from menus where id=?').get(Number(i.id));
     const q = Math.min(parseInt(i.qty) || 0, 20);
     if (m && q > 0) {
       if (!m.aktif) return res.status(409).json({ error: m.nama + ' sudah habis. Hapus dulu dari pesanan.' });
-      total += m.harga * q; rows.push([m, q]);
+      let unit = m.harga; const pil = [], o = i.opsi || {};
+      for (const g of opsiFor(m.kategori) || []) {   // harga + opsi dihitung ulang di server
+        if (g.skip && Object.entries(g.skip).some(([k, v]) => o[k] === v)) continue;
+        const dipilih = g.multi ? [].concat(o[g.key] || []).filter(n => g.pilihan.some(p => p[0] === n))
+                                : [(g.pilihan.find(p => p[0] === o[g.key]) || g.pilihan[0])[0]];
+        for (const n of new Set(dipilih)) {
+          unit += g.pilihan.find(p => p[0] === n)[1];
+          if (g.multi || g.selalu || n !== g.pilihan[0][0]) pil.push(n);
+        }
+      }
+      total += unit * q; rows.push([m, q, unit, pil.join(', ')]);
     }
   }
   if (!rows.length) return res.status(400).json({ error: 'Keranjang kosong.' });
@@ -67,10 +88,10 @@ app.post('/api/orders', async (req, res) => {
   let id;
   try {
     db.exec('BEGIN');
-    const r = db.prepare('insert into orders(pid,table_id,status,total,catatan,pay_method,pay_status) values(?,?,?,?,?,?,?)')
-      .run(pid, t.id, qris ? 'menunggu' : 'baru', total, String(catatan).slice(0, 200), qris ? 'qris' : 'cashier', qris ? 'pending' : 'unpaid');
+    const r = db.prepare('insert into orders(pid,table_id,nama,status,total,catatan,pay_method,pay_status) values(?,?,?,?,?,?,?,?)')
+      .run(pid, t.id, who, qris ? 'menunggu' : 'baru', total, String(catatan).slice(0, 200), qris ? 'qris' : 'cashier', qris ? 'pending' : 'unpaid');
     id = Number(r.lastInsertRowid);
-    for (const [m, q] of rows) db.prepare('insert into order_items(order_id,nama,qty,harga) values(?,?,?,?)').run(id, m.nama, q, m.harga);
+    for (const [m, q, unit, pil] of rows) db.prepare('insert into order_items(order_id,nama,qty,harga,opsi) values(?,?,?,?,?)').run(id, m.nama, q, unit, pil);
     db.exec('COMMIT');
   } catch (e) {
     try { db.exec('ROLLBACK'); } catch (_) {}
@@ -99,7 +120,7 @@ app.get('/api/orders/:pid', (req, res) => {
   const o = db.prepare('select id from orders where pid=?').get(req.params.pid);
   if (!o) return res.sendStatus(404);
   const f = full(o.id);
-  res.json({ id: f.id, nomor: f.nomor, status: f.status, total: f.total, pay_method: f.pay_method, pay_status: f.pay_status, qr_url: f.qr_url, items: f.items });
+  res.json({ id: f.id, nama: f.nama, nomor: f.nomor, status: f.status, total: f.total, pay_method: f.pay_method, pay_status: f.pay_status, qr_url: f.qr_url, items: f.items });
 });
 
 app.post('/api/orders/:pid/push', (req, res) => {
@@ -158,17 +179,40 @@ app.patch('/api/admin/orders/:id', auth, async (req, res) => {
   refresh(); res.json(full(o.id));
 });
 
+app.get('/api/admin/history', auth, (_, res) => {
+  const w = "date(created_at) = date('now','localtime') and status not in ('menunggu','batal')";
+  const orders = db.prepare(`select id from orders where ${w} order by id desc`).all().map(r => full(r.id));
+  const top = db.prepare(`select nama, sum(qty) as qty from order_items where order_id in (select id from orders where ${w}) group by nama order by qty desc limit 5`).all();
+  res.json({ jumlah: orders.length, total: orders.reduce((n, o) => n + o.total, 0), top, orders });
+});
+
 app.get('/api/admin/menus', auth, (_, res) => res.json(db.prepare('select * from menus order by kategori,id').all()));
 app.patch('/api/admin/menus/:id', auth, (req, res) => {
   db.prepare('update menus set aktif=? where id=?').run(req.body.aktif ? 1 : 0, Number(req.params.id)); res.sendStatus(204);
 });
 
+app.post('/api/admin/tables', auth, (req, res) => {
+  const n = Math.min(Math.max(parseInt(req.body.jumlah) || 1, 1), 100);
+  let last = db.prepare('select coalesce(max(nomor),0) as m from tables').get().m;
+  for (let i = 0; i < n; i++) db.prepare('insert into tables(nomor,token) values(?,?)').run(++last, crypto.randomBytes(4).toString('hex'));
+  res.json({ total: last });
+});
+
 app.get('/admin/qr', auth, async (_, res) => {
   const base = env.APP_URL || 'http://localhost:3000';
-  const cards = await Promise.all(db.prepare('select * from tables order by nomor').all().map(async t =>
-    `<figure><img src="${await QRCode.toDataURL(`${base}/menu.html?meja=${t.token}`, { width: 260, margin: 1 })}"><figcaption>Meja ${t.nomor}</figcaption></figure>`));
-  res.send(`<!doctype html><meta charset="utf-8"><title>QR Meja</title><style>body{font:16px system-ui;display:flex;flex-wrap:wrap;gap:24px;padding:24px}
-figure{margin:0;text-align:center;break-inside:avoid}figcaption{font-weight:700;font-size:20px}</style>${cards.join('')}`);
+  const cards = await Promise.all(db.prepare('select * from tables order by nomor').all().map(async t => {
+    const link = `${base}/menu.html?meja=${t.token}`;
+    return `<figure><a href="${link}" target="_blank"><img src="${await QRCode.toDataURL(link, { width: 260, margin: 1 })}"></a><figcaption>Meja ${t.nomor}</figcaption></figure>`;
+  }));
+  res.send(`<!doctype html><meta charset="utf-8"><title>QR Meja</title>
+<style>body{font:16px system-ui;display:flex;flex-wrap:wrap;gap:24px;padding:24px}
+figure{margin:0;text-align:center;break-inside:avoid}figcaption{font-weight:700;font-size:20px}
+.bar{flex-basis:100%;display:flex;gap:10px;align-items:center;flex-wrap:wrap}.bar input{width:70px;padding:6px}
+@media print{.bar{display:none}}</style>
+<div class="bar"><b>Total ${cards.length} meja</b> · Tambah <input id="n" type="number" value="5" min="1" max="50"> meja
+<button onclick="add()">Tambah</button><button onclick="print()">Cetak</button><small>Klik QR untuk membuka halaman customer</small></div>
+${cards.join('')}
+<script>async function add(){await fetch('/api/admin/tables',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jumlah:+document.getElementById('n').value})});location.reload()}</script>`);
 });
 
 app.get('/', (req, res) => res.redirect('/barista'));

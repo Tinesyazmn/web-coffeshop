@@ -1,60 +1,165 @@
 <!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Pesan — Kopi Kita</title><link rel="stylesheet" href="style.css"></head><body>
-<header><h1>Kopi Kita</h1><p id="meja">Memuat…</p></header>
+<title>Pesan — Kopi Kita</title><link rel="stylesheet" href="style.css">
+<style>
+header{display:flex;align-items:center;gap:12px}
+#back{background:rgba(255,255,255,.16);padding:6px 14px;font-size:20px;line-height:1}
+.tabs2{display:flex;gap:8px;overflow-x:auto;padding:12px 16px;margin:0 -16px;position:sticky;top:0;background:var(--bg);z-index:5}
+.tabs2 button{background:#fff;color:var(--ink);border:1.5px solid var(--line);border-radius:99px;white-space:nowrap}
+.tabs2 button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:4px}
+.pc{all:unset;box-sizing:border-box;cursor:pointer;font:inherit;background:#fff;border-radius:16px;overflow:hidden;box-shadow:var(--shadow);display:flex;flex-direction:column;position:relative}
+.pc:focus-visible{outline:3px solid var(--hot);outline-offset:2px}
+.ph,.tile{background:linear-gradient(135deg,#E8DED2,#CDB8A2);display:grid;place-items:center;position:relative;overflow:hidden}
+.ph{aspect-ratio:1;font-size:54px}.tile{width:56px;height:56px;border-radius:12px;font-size:28px;flex:none}
+.ph img,.tile img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.sold{position:absolute;left:8px;top:8px;background:#1E1915;color:#fff;font:700 12px/1 system-ui;padding:5px 9px;border-radius:99px}
+.bd{display:block;padding:10px 12px 14px}.bd strong{display:block;line-height:1.25}.bd small{color:var(--muted)}
+.plus{position:absolute;right:10px;bottom:10px;width:32px;height:32px;border-radius:50%;background:var(--brand);color:#fff;display:grid;place-items:center;font-size:20px}
+.cnt{position:absolute;right:10px;top:10px;background:var(--hot);color:#fff;font:700 13px/1 system-ui;border-radius:99px;padding:5px 9px}
+.pc.soldout{opacity:.6;cursor:default}.pc.soldout .plus{display:none}
+.ci{display:flex;gap:12px;align-items:center;background:#fff;border-radius:14px;padding:12px;margin:8px 0;box-shadow:var(--shadow)}
+.ci .info{flex:1;min-width:0}.ci small{display:block;color:var(--muted)}
+.ctl{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.edit,.link{background:none;color:var(--brand);padding:2px 6px;font-size:14px;font-weight:600;text-decoration:underline}
+.top2{display:flex;justify-content:space-between;align-items:baseline}
+.pm{display:flex;gap:12px;align-items:center;background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:12px 14px;margin:8px 0;cursor:pointer}
+.pm:has(input:checked){border-color:var(--brand);box-shadow:var(--shadow)}.pm input{accent-color:var(--brand)}.pm small{display:block;color:var(--muted)}
+.sum{display:flex;justify-content:space-between;gap:12px;padding:4px 0;color:var(--ink)}
+.sum.t{border-top:1px solid var(--line);margin-top:6px;padding-top:10px;font-weight:700}
+.namebox{background:#fff;border-radius:14px;padding:12px 14px 0;margin:16px 0 0;box-shadow:var(--shadow)}
+input.t{width:100%;font:inherit;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;background:#fff;margin:6px 0 10px}
+#bar{left:0;right:0;bottom:0;max-width:none;border-radius:0;background:#fff;color:var(--ink);padding:12px max(16px,calc((100% - 640px)/2)) calc(12px + env(safe-area-inset-bottom));box-shadow:0 -4px 16px rgba(30,25,21,.12)}
+#bar small{display:block;color:var(--muted);font-weight:400}#bar b{font-size:20px}#bar button{background:var(--brand)}
+#sheet{position:fixed;inset:0;background:rgba(30,25,21,.5);display:flex;align-items:flex-end;justify-content:center;z-index:10}
+#sheet[hidden]{display:none}
+#sbox{background:#fff;width:100%;max-width:640px;border-radius:20px 20px 0 0;padding:18px 18px calc(18px + env(safe-area-inset-bottom));max-height:88vh;overflow:auto}
+.grp{margin:14px 0 6px;font-weight:700}.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chips label{position:relative;border:1.5px solid var(--line);border-radius:99px;padding:7px 14px;cursor:pointer;font-size:15px}
+.chips label:has(input:checked){background:var(--brand);color:#fff;border-color:var(--brand)}
+.chips label:has(input:focus-visible){outline:3px solid var(--hot);outline-offset:2px}
+.chips input{position:absolute;opacity:0;pointer-events:none}
+</style></head><body>
+<header><button id="back" hidden aria-label="Kembali">←</button><div><h1 id="ht">Kopi Kita</h1><p id="meja">Memuat…</p></div></header>
 <main>
-  <div id="menu"></div>
-  <section id="co" hidden>
-    <h2>Pesananmu</h2><div id="sum"></div>
-    <label>Catatan<textarea id="cat" rows="2" maxlength="200" placeholder="Misal: less sugar"></textarea></label>
-    <label>Cara bayar<select id="pay"><option value="cashier">Bayar di kasir</option></select></label>
-    <button id="go" style="width:100%">Pesan sekarang</button><p id="err" class="err"></p>
+  <section id="v-menu"><div class="tabs2" id="tabs"></div><div class="grid" id="grid"></div></section>
+  <section id="v-cart" hidden>
+    <div class="namebox"><label><b>Nama pemesan</b><input id="nama" class="t" maxlength="30" placeholder="Nama untuk dipanggil barista" autocomplete="given-name"></label><p id="nerr" class="err"></p></div>
+    <div class="top2"><h2>Pesanan kamu</h2><button class="link" id="tambah">+ Tambah pesanan</button></div>
+    <div id="lines"></div>
+  </section>
+  <section id="v-pay" hidden>
+    <h2>Metode pembayaran</h2><div id="pms"></div>
+    <h2>Ringkasan pesanan</h2><div class="note" id="ring"></div>
+    <label>Catatan untuk barista<textarea id="cat" rows="2" maxlength="200" placeholder="Misal: jangan terlalu manis"></textarea></label>
+    <p id="err" class="err"></p>
   </section>
 </main>
-<div id="bar" hidden><span id="tot"></span><button id="next">Lihat pesanan</button></div>
+<div id="bar" hidden><div><small id="bl"></small><b id="tot"></b></div><button id="act"></button></div>
+<div id="sheet" hidden><div id="sbox"></div></div>
 <script>
 const rp = n => 'Rp' + n.toLocaleString('id-ID'), $ = s => document.querySelector(s);
-const token = new URLSearchParams(location.search).get('meja'), cart = {}; let menu = [];
+const token = new URLSearchParams(location.search).get('meja'), EMO = { Kopi: '☕', 'Non-kopi': '🍵', Makanan: '🥐' };
+let menu = [], cart = [], cat = 'Semua', view = 'menu', method = 'cashier', qris = false;
 function el(t, txt, cls) { const e = document.createElement(t); if (txt != null) e.textContent = txt; if (cls) e.className = cls; return e; }
+const byId = id => menu.find(m => m.id === id), count = () => cart.reduce((s, l) => s + l.qty, 0), total = () => cart.reduce((s, l) => s + l.unit * l.qty, 0);
+const skipped = (g, pick) => g.skip && Object.entries(g.skip).some(([k, v]) => pick[k] === v);
+const grups = (m, pick) => (m.opsi || []).filter(g => !skipped(g, pick));
+const unitOf = (m, pick) => grups(m, pick).reduce((s, g) => s + [].concat(pick[g.key] || []).reduce((t, n) => t + (g.pilihan.find(p => p[0] === n) || [0, 0])[1], 0), m.harga);
+const ketOf = (m, pick) => grups(m, pick).flatMap(g => [].concat(pick[g.key] || []).filter(v => g.multi || g.selalu || v !== g.pilihan[0][0])).join(' · ');
+// Foto: taruh file di public/img/<id menu>.jpg (id = urutan menu). Kalau tidak ada, tampil emoji.
+function foto(m, cls) { const d = el('span', EMO[m.kategori] || '☕', cls), i = el('img'); i.src = '/img/' + m.id + '.jpg'; i.alt = ''; i.onerror = () => i.remove(); d.append(i); return d; }
 
 async function init() {
-  const t = await fetch('/api/table/' + token); 
+  const t = await fetch('/api/table/' + token);
   if (!t.ok) { $('#meja').textContent = 'QR tidak valid. Scan ulang QR di mejamu.'; return; }
   $('#meja').textContent = 'Meja ' + (await t.json()).nomor;
-  const cfg = await (await fetch('/api/config')).json();
-  if (cfg.qris) $('#pay').append(new Option('QRIS (bayar sekarang)', 'qris'));
+  qris = !!(await (await fetch('/api/config')).json()).qris;
   await loadMenu(); setInterval(loadMenu, 20000);
 }
 async function loadMenu() {
   menu = await (await fetch('/api/menu')).json();
-  menu.forEach(m => { if (!m.aktif) delete cart[m.id]; });
-  draw();
+  cart = cart.filter(l => { const m = byId(l.id); return m && m.aktif; });
+  render();
 }
-function draw() {
-  const root = $('#menu'); root.replaceChildren(); let cat = '';
-  for (const m of menu) {
-    if (m.kategori !== cat) { cat = m.kategori; root.append(el('h2', cat)); }
-    const row = el('div', null, 'row' + (m.aktif ? '' : ' soldout')), info = el('div');
-    if (!m.aktif) { info.append(el('strong', m.nama)); row.append(info, el('span', 'Sold out', 'soldbadge')); root.append(row); continue; }
-    info.append(el('strong', m.nama), el('small', rp(m.harga)));
-    const q = el('div', null, 'qty'), minus = el('button', '−', 'ghost'), plus = el('button', '+');
-    minus.setAttribute('aria-label', 'Kurangi ' + m.nama); plus.setAttribute('aria-label', 'Tambah ' + m.nama);
-    minus.onclick = () => { cart[m.id] = Math.max((cart[m.id] || 0) - 1, 0); draw(); };
-    plus.onclick = () => { cart[m.id] = Math.min((cart[m.id] || 0) + 1, 20); draw(); };
-    q.append(minus, el('span', cart[m.id] || 0), plus); row.append(info, q); root.append(row);
+function addLine(m, pick, qty = 1) {
+  const key = m.id + JSON.stringify(pick), ex = cart.find(l => l.key === key);
+  if (ex) ex.qty = Math.min(ex.qty + qty, 20); else cart.push({ key, id: m.id, qty, o: { ...pick }, unit: unitOf(m, pick), ket: ketOf(m, pick) });
+  render();
+}
+function openSheet(m, line) {
+  const pick = line ? { ...line.o } : {}; if (!line) m.opsi.forEach(g => pick[g.key] = g.multi ? [] : g.pilihan[0][0]);
+  const box = $('#sbox'), add = el('button'), wraps = []; box.replaceChildren(el('h2', m.nama));
+  const upd = () => { wraps.forEach(([g, w]) => w.hidden = !!skipped(g, pick)); add.textContent = (line ? 'Simpan · ' : 'Tambah · ') + rp(unitOf(m, pick)); };
+  for (const g of m.opsi) {
+    const w = el('div'), ch = el('div', null, 'chips'); w.append(el('div', g.label, 'grp'), ch); box.append(w); wraps.push([g, w]);
+    g.pilihan.forEach(([nm, plus]) => {
+      const l = el('label'), r = el('input'); r.type = g.multi ? 'checkbox' : 'radio'; r.name = g.key; r.value = nm;
+      r.checked = g.multi ? [].concat(pick[g.key] || []).includes(nm) : pick[g.key] === nm;
+      r.onchange = () => { pick[g.key] = g.multi ? [...ch.querySelectorAll('input:checked')].map(x => x.value).sort() : nm; upd(); };
+      l.append(r, document.createTextNode(nm + (plus ? ' +' + rp(plus) : ''))); ch.append(l);
+    });
   }
-  const lines = menu.filter(m => m.aktif && cart[m.id] > 0), total = lines.reduce((s, m) => s + m.harga * cart[m.id], 0);
-  $('#bar').hidden = !lines.length; $('#tot').textContent = lines.reduce((s, m) => s + cart[m.id], 0) + ' item · ' + rp(total);
-  const sum = $('#sum'); sum.replaceChildren();
-  for (const m of lines) { const r = el('div', null, 'row'); r.append(el('span', cart[m.id] + '× ' + m.nama), el('span', rp(m.harga * cart[m.id]))); sum.append(r); }
+  const acts = el('div', null, 'acts'), batal = el('button', 'Batal', 'ghost');
+  add.onclick = () => { if (line) cart.splice(cart.indexOf(line), 1); addLine(m, pick, line ? line.qty : 1); $('#sheet').hidden = true; };
+  batal.onclick = () => $('#sheet').hidden = true; acts.append(add, batal); box.append(acts); upd(); $('#sheet').hidden = false;
 }
-$('#next').onclick = () => { $('#co').hidden = false; $('#co').scrollIntoView({ behavior: 'smooth' }); };
-$('#go').onclick = async () => {
-  $('#go').disabled = true; $('#err').textContent = '';
-  const items = Object.entries(cart).filter(([, q]) => q > 0).map(([id, qty]) => ({ id: +id, qty }));
+$('#sheet').onclick = e => { if (e.target.id === 'sheet') e.target.hidden = true; };
+
+function card(m) {
+  const c = el('button', null, 'pc' + (m.aktif ? '' : ' soldout')), ph = foto(m, 'ph'), bd = el('span', null, 'bd');
+  if (!m.aktif) ph.append(el('span', 'Sold out', 'sold'));
+  bd.append(el('strong', m.nama), el('small', rp(m.harga) + (m.opsi ? ' · bisa custom' : ''))); c.append(ph, bd);
+  const n = cart.filter(l => l.id === m.id).reduce((s, l) => s + l.qty, 0); if (n) c.append(el('span', n, 'cnt'));
+  if (m.aktif) { c.append(el('span', '+', 'plus')); c.onclick = () => m.opsi ? openSheet(m) : addLine(m, {}); } else c.disabled = true;
+  return c;
+}
+function line(l) {
+  const m = byId(l.id), r = el('div', null, 'ci'), info = el('div', null, 'info'), ctl = el('div', null, 'ctl'), q = el('div', null, 'qty');
+  const minus = el('button', '−', 'ghost'), plus = el('button', '+');
+  info.append(el('strong', m.nama), el('small', l.ket || ''), el('b', rp(l.unit * l.qty)));
+  minus.onclick = () => { if (--l.qty < 1) cart.splice(cart.indexOf(l), 1); render(); };
+  plus.onclick = () => { l.qty = Math.min(l.qty + 1, 20); render(); };
+  if (m.opsi) { const e = el('button', 'Ubah', 'edit'); e.onclick = () => openSheet(m, l); ctl.append(e); }
+  q.append(minus, el('span', l.qty), plus); ctl.append(q); r.append(foto(m, 'tile'), info, ctl); return r;
+}
+function render() {
+  const cats = ['Semua', ...new Set(menu.map(m => m.kategori))];
+  $('#tabs').replaceChildren(...cats.map(c => { const b = el('button', c, c === cat ? 'on' : ''); b.onclick = () => { cat = c; render(); }; return b; }));
+  $('#grid').replaceChildren(...menu.filter(m => cat === 'Semua' || m.kategori === cat).map(card));
+  $('#lines').replaceChildren(...cart.map(line));
+  const ms = [['cashier', '💵', 'Bayar di kasir', 'Bayar saat mengambil pesanan']];
+  if (qris) ms.push(['qris', '🔳', 'QRIS', 'Bayar sekarang lewat e-wallet atau m-banking']);
+  $('#pms').replaceChildren(...ms.map(([id, e, t, d]) => {
+    const l = el('label', null, 'pm'), r = el('input'), x = el('div'); r.type = 'radio'; r.name = 'pm'; r.checked = method === id; r.onchange = () => method = id;
+    x.append(el('strong', t), el('small', d)); l.append(r, el('span', e), x); return l; }));
+  const ring = $('#ring'); ring.replaceChildren(...cart.map(l => {
+    const d = el('div', null, 'sum'); d.append(el('span', l.qty + '× ' + byId(l.id).nama + (l.ket ? ' (' + l.ket + ')' : '')), el('span', rp(l.unit * l.qty))); return d; }));
+  const t = el('div', null, 'sum t'); t.append(el('span', 'Total'), el('span', rp(total()))); ring.append(t);
+  bar();
+}
+function bar() {
+  const n = count(); if (!n && view !== 'menu') return go('menu');
+  $('#bar').hidden = !n; $('#bl').textContent = view === 'menu' ? n + ' item' : 'Total'; $('#tot').textContent = rp(total());
+  $('#act').textContent = { menu: 'Lihat pesanan', cart: 'Pilih pembayaran', pay: 'Pesan sekarang' }[view];
+}
+function go(v) {
+  view = v; for (const k of ['menu', 'cart', 'pay']) $('#v-' + k).hidden = k !== v;
+  $('#back').hidden = v === 'menu'; $('#ht').textContent = { menu: 'Kopi Kita', cart: 'Pesanan kamu', pay: 'Pembayaran' }[v];
+  window.scrollTo(0, 0); render();
+}
+$('#back').onclick = () => go(view === 'pay' ? 'cart' : 'menu'); $('#tambah').onclick = () => go('menu');
+$('#act').onclick = async () => {
+  if (view === 'menu') return go('cart');
+  const nama = $('#nama').value.trim();
+  if (view === 'cart') {
+    if (!nama) { $('#nerr').textContent = 'Isi nama pemesan dulu.'; $('#nama').focus(); return; }
+    $('#nerr').textContent = ''; return go('pay');
+  }
+  $('#act').disabled = true; $('#err').textContent = '';
   const r = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token, items, catatan: $('#cat').value, method: $('#pay').value }) });
+    body: JSON.stringify({ token, nama, items: cart.map(l => ({ id: l.id, qty: l.qty, opsi: l.o })), catatan: $('#cat').value, method }) });
   const d = await r.json();
-  if (r.ok) location.href = '/status.html?o=' + d.pid; else { $('#err').textContent = d.error || 'Gagal memesan.'; $('#go').disabled = false; }
+  if (r.ok) location.href = '/status.html?o=' + d.pid; else { $('#err').textContent = d.error || 'Gagal memesan.'; $('#act').disabled = false; }
 };
 init();
 </script></body></html>

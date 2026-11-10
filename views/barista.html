@@ -1,15 +1,32 @@
 <!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Dashboard barista</title><link rel="stylesheet" href="/style.css"></head><body>
+<title>Dashboard barista</title><link rel="stylesheet" href="/style.css">
+<style>
+.tabs{display:flex;gap:8px;padding:14px 20px 0}
+.tab{background:#fff;color:var(--ink);border:1.5px solid var(--line)}.tab.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+.card .opt{display:block;margin-left:30px;color:var(--hot);font-weight:600;font-size:13px}
+#v-riwayat{padding:14px 20px 40px;max-width:980px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.stat{background:#fff;border-radius:14px;padding:14px 16px;box-shadow:var(--shadow)}.stat small{display:block;color:var(--muted)}.stat b{font:700 24px Georgia,serif}
+.panel{background:#fff;border-radius:14px;padding:6px 16px 14px;box-shadow:var(--shadow);margin-top:16px}
+.tb{display:grid;grid-template-columns:minmax(110px,210px) 1fr 36px;gap:10px;align-items:center;padding:5px 0}
+.tb div{background:var(--bg);border-radius:6px;height:14px}.tb i{display:block;height:100%;background:var(--ok);border-radius:6px}.tb b{text-align:right}
+.hrow{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.hrow small{display:block;color:var(--muted)}.hr{text-align:right;white-space:nowrap}
+</style></head><body>
 <header class="top">
   <div><h1>Kopi Kita</h1><p>Dashboard barista</p></div>
   <div class="actions"><span class="live" id="live">● Terhubung</span><a class="btn ghost" href="/admin/qr" target="_blank">Cetak QR meja</a></div>
 </header>
-<details class="menus-box"><summary>Ketersediaan menu — hilangkan centang kalau habis</summary><div id="menus" class="menus"></div></details>
-<div class="cols">
-  <section class="col"><h2><i class="dot"></i>Baru <b class="pill" id="c-baru">0</b></h2><div id="baru"></div></section>
-  <section class="col"><h2><i class="dot diproses"></i>Diproses <b class="pill" id="c-diproses">0</b></h2><div id="diproses"></div></section>
-  <section class="col"><h2><i class="dot siap"></i>Siap diambil <b class="pill" id="c-siap">0</b></h2><div id="siap"></div></section>
+<div class="tabs"><button class="tab on" data-v="antri">Antrian</button><button class="tab" data-v="riwayat">Riwayat hari ini</button></div>
+<div id="v-antri">
+  <details class="menus-box"><summary>Ketersediaan menu — hilangkan centang kalau habis</summary><div id="menus" class="menus"></div></details>
+  <div class="cols">
+    <section class="col"><h2><i class="dot"></i>Baru <b class="pill" id="c-baru">0</b></h2><div id="baru"></div></section>
+    <section class="col"><h2><i class="dot diproses"></i>Diproses <b class="pill" id="c-diproses">0</b></h2><div id="diproses"></div></section>
+    <section class="col"><h2><i class="dot siap"></i>Siap diambil <b class="pill" id="c-siap">0</b></h2><div id="siap"></div></section>
+  </div>
 </div>
+<div id="v-riwayat" hidden></div>
 <script src="/socket.io/socket.io.js"></script>
 <script>
 const $ = s => document.querySelector(s);
@@ -18,13 +35,15 @@ const el = (t, txt, cls) => { const e = document.createElement(t); if (txt != nu
 const api = (u, m, b) => fetch(u, { method: m || 'GET', headers: { 'Content-Type': 'application/json' }, body: b && JSON.stringify(b) });
 const rp = n => 'Rp' + n.toLocaleString('id-ID');
 const mins = s => Math.max(0, Math.round((Date.now() - new Date(s.replace(' ', 'T'))) / 60000));
+const itemTxt = i => i.qty + '× ' + i.nama + (i.opsi ? ' (' + i.opsi + ')' : '');
+let view = 'antri';
 
 function card(o) {
   const m = mins(o.created_at), c = el('div', null, 'card' + (m >= 10 && o.status !== 'siap' ? ' late' : ''));
-  const head = el('div', null, 'head'); head.append(el('h3', '#' + o.id), el('span', 'Meja ' + o.nomor, 'meja')); c.append(head);
-  c.append(el('div', m < 1 ? 'Baru saja' : m + ' menit lalu', 'ago'));
+  const head = el('div', null, 'head'); head.append(el('h3', o.nama || '#' + o.id), el('span', 'Meja ' + o.nomor, 'meja')); c.append(head);
+  c.append(el('div', '#' + o.id + ' · ' + (m < 1 ? 'baru saja' : m + ' menit lalu'), 'ago'));
   const ul = el('ul');
-  o.items.forEach(i => { const li = el('li'); li.append(el('b', i.qty + '×'), document.createTextNode(i.nama)); ul.append(li); }); c.append(ul);
+  o.items.forEach(i => { const li = el('li'); li.append(el('b', i.qty + '×'), document.createTextNode(i.nama)); if (i.opsi) li.append(el('span', i.opsi, 'opt')); ul.append(li); }); c.append(ul);
   if (o.catatan) c.append(el('div', 'Catatan: ' + o.catatan, 'cat'));
   const paid = o.pay_status === 'paid';
   c.append(el('span', paid ? 'Lunas' : 'Belum bayar · ' + rp(o.total), 'pay' + (paid ? ' ok' : '')));
@@ -41,6 +60,30 @@ async function load() {
     $('#' + k).replaceChildren(...(cards.length ? cards.map(card) : [el('div', 'Belum ada pesanan', 'empty')]));
   }
 }
+async function loadHistory() {
+  const h = await (await api('/api/admin/history')).json(), box = $('#v-riwayat'); box.replaceChildren();
+  const stats = el('div', null, 'stats');
+  [['Pesanan hari ini', h.jumlah], ['Total hari ini', rp(h.total)], ['Terlaris', h.top[0] ? h.top[0].nama + ' (' + h.top[0].qty + ')' : '-']].forEach(([a, v]) => {
+    const s = el('div', null, 'stat'); s.append(el('small', a), el('b', String(v))); stats.append(s); });
+  const tp = el('div', null, 'panel'); tp.append(el('h2', 'Menu paling banyak dipesan'));
+  if (!h.top.length) tp.append(el('div', 'Belum ada pesanan hari ini', 'empty'));
+  h.top.forEach((t, i) => {
+    const r = el('div', null, 'tb'), tr = el('div'), f = el('i'); f.style.width = Math.round(t.qty / h.top[0].qty * 100) + '%'; tr.append(f);
+    r.append(el('span', (i + 1) + '. ' + t.nama), tr, el('b', String(t.qty))); tp.append(r); });
+  const lp = el('div', null, 'panel'); lp.append(el('h2', 'Semua pesanan hari ini'));
+  if (!h.orders.length) lp.append(el('div', 'Belum ada pesanan hari ini', 'empty'));
+  h.orders.forEach(o => {
+    const r = el('div', null, 'hrow'), l = el('div'), rt = el('div', null, 'hr');
+    l.append(el('strong', (o.nama || '#' + o.id) + ' · Meja ' + o.nomor), el('small', o.items.map(itemTxt).join(', ')));
+    rt.append(el('b', rp(o.total)), el('small', o.created_at.slice(11, 16) + ' · ' + o.status)); r.append(l, rt); lp.append(r); });
+  box.append(stats, tp, lp);
+}
+function show(v) {
+  view = v; $('#v-antri').hidden = v !== 'antri'; $('#v-riwayat').hidden = v !== 'riwayat';
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.v === v));
+  if (v === 'riwayat') loadHistory();
+}
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => show(t.dataset.v));
 async function loadMenus() {
   const ms = await (await api('/api/admin/menus')).json();
   $('#menus').replaceChildren(...ms.map(m => {
@@ -52,6 +95,6 @@ function beep() { try { const a = new AudioContext(), o = a.createOscillator(); 
 const s = io();
 s.on('connect', () => { s.emit('join:barista'); $('#live').textContent = '● Terhubung'; $('#live').className = 'live'; });
 s.on('disconnect', () => { $('#live').textContent = '● Terputus'; $('#live').className = 'live off'; });
-s.on('refresh', load); s.on('new', beep);
+s.on('refresh', () => { load(); if (view === 'riwayat') loadHistory(); }); s.on('new', beep);
 load(); loadMenus(); setInterval(load, 30000);
 </script></body></html>

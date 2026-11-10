@@ -22,12 +22,12 @@ let last = '';
 async function load() {
   const r = await fetch('/api/orders/' + pid); if (!r.ok) { $('#st').textContent = 'Pesanan tidak ditemukan'; return; }
   const o = await r.json();
-  $('#mj').textContent = o.nomor; $('#no').textContent = '#' + o.id;
+  $('#mj').textContent = o.nomor + (o.nama ? ' · ' + o.nama : ''); $('#no').textContent = '#' + o.id;
   $('#st').textContent = LBL[o.status]; $('#st').className = 'state ' + o.status;
   document.querySelectorAll('#steps i').forEach((e, i) => e.classList.toggle('on', i < IDX[o.status]));
   $('#qr').hidden = !(o.status === 'menunggu' && o.qr_url); if (o.qr_url) $('#qrimg').src = o.qr_url;
   $('#cash').hidden = !(o.pay_method === 'cashier' && o.pay_status !== 'paid' && ['baru', 'diproses', 'siap'].includes(o.status));
-  $('#items').replaceChildren(...o.items.map(i => { const d = document.createElement('div'); d.className = 'row'; d.textContent = i.qty + '× ' + i.nama; return d; }));
+  $('#items').replaceChildren(...o.items.map(i => { const d = document.createElement('div'); d.className = 'row'; d.textContent = i.qty + '× ' + i.nama + (i.opsi ? ' (' + i.opsi + ')' : ''); return d; }));
   if (o.status === 'siap' && last !== 'siap') { navigator.vibrate && navigator.vibrate([300, 150, 300]); document.title = '✅ Pesanan siap!'; }
   last = o.status;
 }
@@ -51,7 +51,7 @@ const b64 = k => Uint8Array.from(atob((k + '='.repeat((4 - k.length % 4) % 4)).r
       const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(cfg.vapid) });
       await fetch(`/api/orders/${pid}/push`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subscription: sub }) });
       $('#pushtxt').textContent = 'Notifikasi aktif. Kamu akan dikabari saat pesanan siap.'; $('#push').hidden = true;
-    } catch (e) { $('#pushtxt').textContent = 'Notifikasi gagal diaktifkan. Pantau lewat halaman ini.'; }
+    } catch (e) { console.error(e); $('#pushtxt').textContent = 'Notifikasi gagal diaktifkan (' + e.name + ': ' + e.message + '). Pantau lewat halaman ini.'; }
   };
 })();
 </script></body></html>
