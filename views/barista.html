@@ -12,6 +12,10 @@
 .tb div{background:var(--bg);border-radius:6px;height:14px}.tb i{display:block;height:100%;background:var(--ok);border-radius:6px}.tb b{text-align:right}
 .hrow{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
 .hrow small{display:block;color:var(--muted)}.hr{text-align:right;white-space:nowrap}
+
+.mf,.mrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.mf input,.mrow input{font:inherit;padding:8px 10px;border:1.5px solid var(--line);border-radius:10px;min-width:0}
+.mrow .id{color:var(--muted);width:44px;font-size:13px}.mrow>input:first-of-type{flex:1;min-width:140px}
 </style></head><body>
 <header class="top">
   <div><h1>Kopi Kita</h1><p>Dashboard barista</p></div>
@@ -20,6 +24,11 @@
 <div class="tabs"><button class="tab on" data-v="antri">Antrian</button><button class="tab" data-v="riwayat">Riwayat hari ini</button></div>
 <div id="v-antri">
   <details class="menus-box"><summary>Ketersediaan menu — hilangkan centang kalau habis</summary><div id="menus" class="menus"></div></details>
+  <details class="menus-box"><summary>Kelola menu — tambah, ubah harga, hapus</summary>
+    <form id="addm" class="mf"><input name="nama" placeholder="Nama menu" required maxlength="40" style="flex:1;min-width:140px"><input name="kategori" list="kats" placeholder="Kategori" required maxlength="20" style="width:130px"><input name="harga" type="number" min="0" step="500" placeholder="Harga" required style="width:110px"><button>Tambah</button></form>
+    <datalist id="kats"></datalist><div id="manage"></div>
+    <p class="note" style="margin:10px 0 14px">Foto menu: taruh file <b>nomor-menu.jpg</b> (nomor di kiri, misalnya <b>8.jpg</b>) di folder <b>public\img\</b>. Pilihan suhu, ukuran, gula, es, dan topping otomatis ada untuk kategori <b>Kopi</b> dan <b>Non-kopi</b>.</p>
+  </details>
   <div class="cols">
     <section class="col"><h2><i class="dot"></i>Baru <b class="pill" id="c-baru">0</b></h2><div id="baru"></div></section>
     <section class="col"><h2><i class="dot diproses"></i>Diproses <b class="pill" id="c-diproses">0</b></h2><div id="diproses"></div></section>
@@ -91,10 +100,25 @@ async function loadMenus() {
     cb.onchange = () => api('/api/admin/menus/' + m.id, 'PATCH', { aktif: cb.checked });
     l.append(cb, el('span', m.nama + ' · ' + rp(m.harga))); return l; }));
 }
+async function loadManage() {
+  const ms = await (await api('/api/admin/menus')).json();
+  $('#kats').replaceChildren(...[...new Set(ms.map(m => m.kategori))].map(k => { const o = el('option'); o.value = k; return o; }));
+  $('#manage').replaceChildren(...ms.map(m => {
+    const r = el('div', null, 'mrow'), n = el('input'), k = el('input'), p = el('input'), s = el('button', 'Simpan'), d = el('button', 'Hapus', 'ghost');
+    n.value = m.nama; k.value = m.kategori; p.type = 'number'; p.value = m.harga; p.step = 500; p.style.width = '110px'; k.style.width = '120px';
+    s.onclick = async () => { const x = await api('/api/admin/menus/' + m.id, 'PUT', { nama: n.value, kategori: k.value, harga: p.value });
+      if (x.ok) { s.textContent = 'Tersimpan ✓'; loadMenus(); } else alert((await x.json()).error); };
+    d.onclick = async () => { if (confirm('Hapus ' + m.nama + '? Riwayat pesanan lama tidak berubah.')) { await api('/api/admin/menus/' + m.id, 'DELETE'); loadManage(); loadMenus(); } };
+    r.append(el('span', '#' + m.id, 'id'), n, k, p, s, d); return r; }));
+}
+$('#addm').onsubmit = async e => {
+  e.preventDefault(); const f = e.target, x = await api('/api/admin/menus', 'POST', { nama: f.nama.value, kategori: f.kategori.value, harga: f.harga.value });
+  if (x.ok) { f.reset(); loadManage(); loadMenus(); } else alert((await x.json()).error);
+};
 function beep() { try { const a = new AudioContext(), o = a.createOscillator(); o.connect(a.destination); o.frequency.value = 880; o.start(); o.stop(a.currentTime + .25); } catch (e) {} }
 const s = io();
 s.on('connect', () => { s.emit('join:barista'); $('#live').textContent = '● Terhubung'; $('#live').className = 'live'; });
 s.on('disconnect', () => { $('#live').textContent = '● Terputus'; $('#live').className = 'live off'; });
 s.on('refresh', () => { load(); if (view === 'riwayat') loadHistory(); }); s.on('new', beep);
-load(); loadMenus(); setInterval(load, 30000);
+load(); loadMenus(); loadManage(); setInterval(load, 30000);
 </script></body></html>

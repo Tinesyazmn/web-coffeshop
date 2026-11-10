@@ -191,6 +191,24 @@ app.patch('/api/admin/menus/:id', auth, (req, res) => {
   db.prepare('update menus set aktif=? where id=?').run(req.body.aktif ? 1 : 0, Number(req.params.id)); res.sendStatus(204);
 });
 
+const menuData = b => {
+  b = b || {};
+  const nama = String(b.nama || '').trim().slice(0, 40), kategori = String(b.kategori || '').trim().slice(0, 20) || 'Lainnya', harga = Math.round(Number(b.harga));
+  return nama && Number.isFinite(harga) && harga >= 0 && harga <= 1000000 ? { nama, kategori, harga } : null;
+};
+app.post('/api/admin/menus', auth, (req, res) => {
+  const d = menuData(req.body); if (!d) return res.status(400).json({ error: 'Isi nama dan harga dengan benar.' });
+  const r = db.prepare('insert into menus(nama,harga,kategori) values(?,?,?)').run(d.nama, d.harga, d.kategori);
+  res.status(201).json({ id: Number(r.lastInsertRowid) });
+});
+app.put('/api/admin/menus/:id', auth, (req, res) => {
+  const d = menuData(req.body); if (!d) return res.status(400).json({ error: 'Isi nama dan harga dengan benar.' });
+  db.prepare('update menus set nama=?, harga=?, kategori=? where id=?').run(d.nama, d.harga, d.kategori, Number(req.params.id)); res.sendStatus(204);
+});
+app.delete('/api/admin/menus/:id', auth, (req, res) => {
+  db.prepare('delete from menus where id=?').run(Number(req.params.id)); res.sendStatus(204);   // riwayat pesanan menyimpan nama sendiri, jadi aman
+});
+
 app.post('/api/admin/tables', auth, (req, res) => {
   const n = Math.min(Math.max(parseInt(req.body.jumlah) || 1, 1), 100);
   let last = db.prepare('select coalesce(max(nomor),0) as m from tables').get().m;
