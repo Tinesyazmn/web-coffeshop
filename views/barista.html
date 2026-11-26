@@ -12,23 +12,22 @@
 .tb div{background:var(--bg);border-radius:6px;height:14px}.tb i{display:block;height:100%;background:var(--ok);border-radius:6px}.tb b{text-align:right}
 .hrow{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
 .hrow small{display:block;color:var(--muted)}.hr{text-align:right;white-space:nowrap}
-
 .mf,.mrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
 .mf input,.mrow input{font:inherit;padding:8px 10px;border:1.5px solid var(--line);border-radius:10px;min-width:0}
 .mrow .id{color:var(--muted);width:44px;font-size:13px}.mrow>input:first-of-type{flex:1;min-width:140px}
+#scrim{position:fixed;inset:0;background:rgba(30,25,21,.45);z-index:20;opacity:0;pointer-events:none;transition:opacity .2s}
+#drawer{position:fixed;top:0;right:0;bottom:0;width:min(520px,100%);background:var(--bg);z-index:21;transform:translateX(100%);visibility:hidden;transition:transform .25s,visibility .25s;overflow:auto;padding:16px 18px 40px;box-shadow:-8px 0 24px rgba(30,25,21,.2)}
+body.dopen #scrim{opacity:1;pointer-events:auto}body.dopen #drawer{transform:none;visibility:visible}
+.dh{display:flex;justify-content:space-between;align-items:center}.dh h2{margin:0;font-size:22px}
+.hint{color:var(--muted);font-size:14px;margin:4px 0 12px}
+@media(prefers-reduced-motion:reduce){#drawer,#scrim{transition:none}}
 </style></head><body>
 <header class="top">
   <div><h1>Kopi Kita</h1><p>Dashboard barista</p></div>
-  <div class="actions"><span class="live" id="live">● Terhubung</span><a class="btn ghost" href="/admin/qr" target="_blank">Cetak QR meja</a></div>
+  <div class="actions"><span class="live" id="live">● Terhubung</span><a class="btn ghost" href="/admin/qr" target="_blank">Cetak QR meja</a><button class="ghost" id="dopen" aria-expanded="false">☰ Kelola menu</button></div>
 </header>
 <div class="tabs"><button class="tab on" data-v="antri">Antrian</button><button class="tab" data-v="riwayat">Riwayat hari ini</button></div>
 <div id="v-antri">
-  <details class="menus-box"><summary>Ketersediaan menu — hilangkan centang kalau habis</summary><div id="menus" class="menus"></div></details>
-  <details class="menus-box"><summary>Kelola menu — tambah, ubah harga, hapus</summary>
-    <form id="addm" class="mf"><input name="nama" placeholder="Nama menu" required maxlength="40" style="flex:1;min-width:140px"><input name="kategori" list="kats" placeholder="Kategori" required maxlength="20" style="width:130px"><input name="harga" type="number" min="0" step="500" placeholder="Harga" required style="width:110px"><button>Tambah</button></form>
-    <datalist id="kats"></datalist><div id="manage"></div>
-    <p class="note" style="margin:10px 0 14px">Foto menu: taruh file <b>nomor-menu.jpg</b> (nomor di kiri, misalnya <b>8.jpg</b>) di folder <b>public\img\</b>. Pilihan suhu, ukuran, gula, es, dan topping otomatis ada untuk kategori <b>Kopi</b> dan <b>Non-kopi</b>.</p>
-  </details>
   <div class="cols">
     <section class="col"><h2><i class="dot"></i>Baru <b class="pill" id="c-baru">0</b></h2><div id="baru"></div></section>
     <section class="col"><h2><i class="dot diproses"></i>Diproses <b class="pill" id="c-diproses">0</b></h2><div id="diproses"></div></section>
@@ -36,6 +35,16 @@
   </div>
 </div>
 <div id="v-riwayat" hidden></div>
+<div id="scrim"></div>
+<aside id="drawer" aria-label="Pengaturan menu">
+  <div class="dh"><h2>Pengaturan menu</h2><button class="ghost" id="dclose" aria-label="Tutup">✕</button></div>
+  <section class="panel"><h2>Ketersediaan</h2><p class="hint">Hilangkan centang kalau menu habis. Customer akan melihat tulisan Sold out.</p><div id="menus" class="menus"></div></section>
+  <section class="panel"><h2>Tambah menu</h2>
+    <form id="addm" class="mf"><input name="nama" placeholder="Nama menu" required maxlength="40" style="flex:1;min-width:140px"><input name="kategori" list="kats" placeholder="Kategori" required maxlength="20" style="width:130px"><input name="harga" type="number" min="0" step="500" placeholder="Harga" required style="width:110px"><button>Tambah</button></form>
+    <datalist id="kats"></datalist></section>
+  <section class="panel"><h2>Ubah / hapus menu</h2><div id="manage"></div>
+    <p class="hint">Foto menu: taruh file <b>nomor-menu.jpg</b> (nomor di kiri, misalnya <b>8.jpg</b>) di folder <b>public\img\</b>. Kategori <b>Kopi</b> dan <b>Non-kopi</b> otomatis punya pilihan suhu, ukuran, gula, es, dan topping.</p></section>
+</aside>
 <script src="/socket.io/socket.io.js"></script>
 <script>
 const $ = s => document.querySelector(s);
@@ -112,10 +121,13 @@ async function loadManage() {
     r.append(el('span', '#' + m.id, 'id'), n, k, p, s, d); return r; }));
 }
 $('#addm').onsubmit = async e => {
-  e.preventDefault(); const f = e.target, x = await api('/api/admin/menus', 'POST', { nama: f.nama.value, kategori: f.kategori.value, harga: f.harga.value });
+  e.preventDefault(); const f = e.target, x = await api('/api/admin/menus', 'POST', { nama: f.elements.nama.value, kategori: f.elements.kategori.value, harga: f.elements.harga.value });
   if (x.ok) { f.reset(); loadManage(); loadMenus(); } else alert((await x.json()).error);
 };
 function beep() { try { const a = new AudioContext(), o = a.createOscillator(); o.connect(a.destination); o.frequency.value = 880; o.start(); o.stop(a.currentTime + .25); } catch (e) {} }
+const dopen = on => { document.body.classList.toggle('dopen', on); $('#dopen').setAttribute('aria-expanded', on); (on ? $('#dclose') : $('#dopen')).focus(); };
+$('#dopen').onclick = () => dopen(true); $('#dclose').onclick = $('#scrim').onclick = () => dopen(false);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.body.classList.contains('dopen')) dopen(false); });
 const s = io();
 s.on('connect', () => { s.emit('join:barista'); $('#live').textContent = '● Terhubung'; $('#live').className = 'live'; });
 s.on('disconnect', () => { $('#live').textContent = '● Terputus'; $('#live').className = 'live off'; });
